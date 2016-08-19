@@ -7,6 +7,4 @@ require 'appdb_reader/version'
 module AppdbReader; end
 
 require 'active_support/all'
-
 require 'appdb_reader/catalogue'
-require 'appdb_reader/cache_manager'

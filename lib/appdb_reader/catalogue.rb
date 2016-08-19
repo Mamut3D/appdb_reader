@@ -6,8 +6,6 @@ module AppdbReader
   # Your Mama
   # (fat)
   class Catalogue
-    attr_reader :cache_manager
-
     APPDB_PROXY_URL = 'https://appdb.egi.eu/api/proxy'.freeze
     APPDB_REQUEST_FORM = 'version=1.0&resource=broker&data=%3Cappdb%3Abroker%20xmlns%3Axs%3D%22http%3A%2F%2Fwww.w3.org'\
                          '%2F2001%2FXMLSchema%22%20xmlns%3Axsi%3D%22http%3A%2F%2Fwww.w3.org%2F2001%2FXMLSchema-instanc'\
@@ -16,15 +14,9 @@ module AppdbReader
                          '%3Aparam%20name%3D%22listmode%22%3Edetails%3C%2Fappdb%3Aparam%3E%3C%2Fappdb%3Arequest%3E%3C%'\
                          '2Fappdb%3Abroker%3E'.freeze
 
-    def initialize(options = {})
-      @cache_manager = AppdbReader::CacheManager.new options
-    end
-
     def vaproviders_from_appdb
-      providers = cache_manager.cache_fetch('guocci-appdb-sites', 2.days) do
-        response = HTTParty.post(APPDB_PROXY_URL, body: APPDB_REQUEST_FORM)
-        response.success? ? response.parsed_response : nil
-      end
+      response = HTTParty.post(APPDB_PROXY_URL, body: APPDB_REQUEST_FORM)
+      providers = response.success? ? response.parsed_response : nil
       providers ? providers['broker']['reply']['appdb']['provider'] : []
     end
 
@@ -64,10 +56,8 @@ module AppdbReader
     def image_appliance(image)
       return nil if image['va_provider_image_id'].blank? || image['mp_uri'].blank?
 
-      cache_manager.cache_fetch("guocci-appdb-appliance-#{Digest::SHA1.hexdigest(image['mp_uri'])}", 2.days) do
-        response = HTTParty.get("#{image['mp_uri'].chomp('/')}/json")
-        response.success? ? response.parsed_response : nil
-      end
+      response = HTTParty.get("#{image['mp_uri'].chomp('/')}/json")
+      response.success? ? response.parsed_response : nil
     end
 
     def vaprovider_appliances_vo(vaprovider, appl, image)
