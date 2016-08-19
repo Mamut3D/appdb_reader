@@ -1,5 +1,5 @@
-require 'fileutils'
 require 'json'
+require 'mongo'
 
 module AppdbReader
   # Please burn in hell dear rubocop
@@ -7,51 +7,52 @@ module AppdbReader
   # Your Mama
   # (fat)
   class CacheManager
-    attr_reader :logger, :filename, :key
+    attr_reader :logger
 
-    CACHE_DIR = '/tmp/guocci_cache'.freeze
+    MONGODB_HOST = '127.0.0.1'.freeze
+    MONGODB_NAME = 'cachedb'.freeze
+    MONGODB_PORT = '27017'.freeze
 
     def initialize(options = {})
       @logger = options[:logger] || Logger.new(STDOUT)
-      FileUtils.mkdir_p CACHE_DIR
+      @mongodb_host = options[:mongodb_host] || MONGODB_HOST
+      @mongodb_name = options[:mongodb_name] || MONGODB_NAME
+      @mongodb_port = options[:mongodb_port] || MONGODB_PORT
+      @client = Mongo::Client.new([@mongodb_host + ':' + @mongodb_port], database: @mongodb_name)
     end
 
     def cache_fetch(key, expiration = 1.hour)
       raise 'You have to provide a block!' unless block_given?
 
-      @key = key
-      @filename = File.join(CACHE_DIR, key)
+      cached_data = @client[:cache].find(key: key).first
 
-      if cache_valid?(expiration)
-        cache_hit
-      else
-        cache_miss(yield)
-      end
+      cache_valid?(cached_data, expiration) ? cache_hit(cached_data, key) : cache_miss(yield, key)
     end
 
     private
 
-    def cache_hit
+    def cache_hit(cached_data, key)
       logger.debug "Cache hit on #{key.inspect}"
-      File.open(filename, 'r') do |file|
-        file.flock(File::LOCK_SH)
-        JSON.parse file.read
-      end
+      JSON.parse cached_data[:data]
     end
 
-    def cache_miss(data)
+    def cache_miss(data, key)
       logger.debug "Cache miss on #{key.inspect}"
-      File.open(filename, File::RDWR | File::CREAT, 0o644) do |file|
-        file.flock(File::LOCK_EX)
-        file.write JSON.pretty_generate(data)
-        file.flush
-        file.truncate(file.pos)
-      end unless data.blank?
+
+      @client[:cache].delete_one(key: key)
+      json_data = JSON.pretty_generate(data)
+
+      data_to_cache = {
+        key: key,
+        time_of_creation: Time.now,
+        data: json_data
+      }
+      @client[:cache].insert_one(data_to_cache)
       data
     end
 
-    def cache_valid?(expiration)
-      File.exist?(filename) && !File.zero?(filename) && ((Time.now - expiration) < File.stat(filename).mtime)
+    def cache_valid?(cached_data, expiration)
+      !cached_data.blank? && (Time.now - expiration) < cached_data[:time_of_creation]
     end
   end
 end
